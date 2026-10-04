@@ -24,7 +24,7 @@ The AI model must act as the intelligent decision-maker that determines which da
 
 ### 1.3 Solution Summary
 
-A web-based tool built with **Nuxt 3** and **Tailwind CSS** that provides a simple GUI for uploading a PDF file. The file is sent to the Nuxt server backend, which processes it using the **Google Gemini 2.5 Flash** API. The AI analyzes the entire PDF, identifies all product/pricing data, determines the appropriate column structure, and returns a normalized dataset. The server then converts this into a **semicolon-delimited UTF-8 CSV** file and serves it to the user for download.
+A web-based tool built with **Nuxt 3** and **Tailwind CSS** that provides a simple GUI for uploading a PDF file. The file is sent to the Nuxt server backend, which processes it using the **Google Gemini 3.8 Flash** API. The AI analyzes the entire PDF, identifies all product/pricing data, determines the appropriate column structure, and returns a normalized dataset. The server then converts this into a **semicolon-delimited UTF-8 CSV** file and serves it to the user for download.
 
 ---
 
@@ -34,7 +34,7 @@ A web-based tool built with **Nuxt 3** and **Tailwind CSS** that provides a simp
 | ------------ | ------------------------- | ------------------------------------------ |
 | Framework    | **Nuxt 3**                | Full-stack Vue.js framework                |
 | UI Styling   | **Tailwind CSS**          | Utility-first CSS framework                |
-| AI Model     | **Google Gemini 2.5 Flash** | Via Google Generative AI REST API        |
+| AI Model     | **Google Gemini 3.8 Flash** | Via Google Generative AI REST API        |
 | Runtime      | **Node.js**               | Server-side execution environment          |
 | Language     | **TypeScript**            | Preferred for type safety                  |
 | Deployment   | **Local**                 | Development server (`npm run dev`)         |
@@ -71,7 +71,7 @@ A web-based tool built with **Nuxt 3** and **Tailwind CSS** that provides a simp
 │  │                                                   │    │
 │  │  1. Receive uploaded PDF file                     │    │
 │  │  2. Convert PDF to format suitable for AI         │    │
-│  │  3. Send to Gemini 2.5 Flash with detailed prompt │    │
+│  │  3. Send to Gemini 3.8 Flash with detailed prompt │    │
 │  │  4. Receive structured JSON response from AI      │    │
 │  │  5. Convert JSON to semicolon-delimited CSV       │    │
 │  │  6. Return CSV file to client                     │    │
@@ -80,7 +80,7 @@ A web-based tool built with **Nuxt 3** and **Tailwind CSS** that provides a simp
                           │ HTTPS (API call)
                           ▼
 ┌─────────────────────────────────────────────────────────┐
-│              GOOGLE GEMINI 2.5 FLASH API                │
+│              GOOGLE GEMINI 3.8 FLASH API                │
 │                                                         │
 │  - Receives PDF content (as base64 or extracted text)   │
 │  - Analyzes structure, identifies all product data      │
@@ -134,7 +134,7 @@ pdf_parser_to_csv_tv/
 GEMINI_API_KEY=your_api_key_here
 
 # Model Configuration
-GEMINI_MODEL=gemini-2.5-flash
+GEMINI_MODEL=gemini-3.8-flash
 
 # Optional: Request timeout in milliseconds (default: 120000 = 2 minutes)
 GEMINI_TIMEOUT=120000
@@ -152,7 +152,7 @@ Environment variables must be accessed via Nuxt 3 `runtimeConfig` in `nuxt.confi
 export default defineNuxtConfig({
   runtimeConfig: {
     geminiApiKey: process.env.GEMINI_API_KEY,
-    geminiModel: process.env.GEMINI_MODEL || 'gemini-2.5-flash',
+    geminiModel: process.env.GEMINI_MODEL || 'gemini-3.8-flash',
     geminiTimeout: parseInt(process.env.GEMINI_TIMEOUT || '120000'),
   },
 })
@@ -182,7 +182,7 @@ This is the **core feature** and the primary value proposition of the applicatio
 
 #### 5.2.1 Input to AI
 
-The PDF file is sent to Gemini 2.5 Flash. Gemini's multimodal capabilities allow sending the PDF directly as a binary file (base64-encoded) in the API request. This is the preferred approach because:
+The PDF file is sent to Gemini 3.8 Flash. Gemini's multimodal capabilities allow sending the PDF directly as a binary file (base64-encoded) in the API request. This is the preferred approach because:
 
 - It preserves the visual layout, which is critical for understanding complex table structures.
 - It handles scanned PDFs without needing a separate OCR step.
@@ -190,7 +190,7 @@ The PDF file is sent to Gemini 2.5 Flash. Gemini's multimodal capabilities allow
 
 #### 5.2.2 AI Responsibilities
 
-The Gemini 2.5 Flash model is responsible for:
+The Gemini 3.8 Flash model is responsible for:
 
 1. **Identifying all product/pricing data** — distinguishing actual catalog entries from headers, footers, page numbers, legal text, logos, decorative elements, and other non-data content.
 2. **Determining the column schema** — based on what data fields are present in the PDF (e.g., part number, product name, price, unit, category, description, weight, dimensions, voltage, etc.). The columns are **not predefined** — the AI must infer them from the content.
@@ -352,14 +352,14 @@ The UI transitions through three states:
 ### 8.1 Gemini API Usage
 
 - **SDK**: `@google/genai` (official Google Generative AI JavaScript/TypeScript SDK)
-- **Model**: `gemini-2.5-flash`
+- **Model**: `gemini-3.8-flash`
 - **Pricing tier**: Free tier (rate limits apply — see section 8.2)
 - **Input method**: Direct PDF file upload via the API's multimodal capabilities (inline data as base64)
 - **Response format**: JSON mode (structured output) — the model is instructed to return valid JSON matching the defined schema
 
 ### 8.2 Free Tier Considerations
 
-The Gemini 2.5 Flash free tier has rate limits. The application must:
+The Gemini 3.8 Flash free tier has rate limits. The application must:
 
 - Handle rate limit errors gracefully (HTTP 429) and inform the user.
 - Handle rate limit errors gracefully... The application implements automatic retry logic for temporary failures as specified in section 10.1.
@@ -388,7 +388,7 @@ For very large PDFs that may exceed the Gemini API's input token limit:
    a. System prompt (from prompts.ts)
    b. User prompt with parsing instructions (from prompts.ts)
    c. PDF file as inline base64 data (mimeType: "application/pdf")
-8. Server sends request to Gemini 2.5 Flash API
+8. Server sends request to Gemini 3.8 Flash API
 9. Gemini analyzes the entire PDF and returns structured JSON
 10. Server validates the JSON response (has "columns" and "rows")
 11. Server converts JSON to semicolon-delimited CSV:

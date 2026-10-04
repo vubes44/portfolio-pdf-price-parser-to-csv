@@ -13,7 +13,7 @@ interface ParsedData {
  * Custom error class for Gemini API errors with categorized types.
  */
 class GeminiError extends Error {
-  public readonly type: 'rate_limit' | 'timeout' | 'invalid_response' | 'network' | 'generic'
+  public readonly type: 'rate_limit' | 'service_unavailable' | 'timeout' | 'invalid_response' | 'network' | 'generic'
 
   constructor(message: string, type: GeminiError['type']) {
     super(message)
@@ -27,7 +27,7 @@ class GeminiError extends Error {
  */
 function isRetryableError(error: unknown): boolean {
   if (error instanceof GeminiError) {
-    return error.type === 'rate_limit' || error.type === 'timeout'
+    return error.type === 'rate_limit' || error.type === 'service_unavailable' || error.type === 'timeout'
   }
   if (error instanceof Error) {
     const message = error.message.toLowerCase()
@@ -37,6 +37,10 @@ function isRetryableError(error: unknown): boolean {
     }
     // Check for timeout
     if (message.includes('timeout') || message.includes('timed out') || message.includes('deadline exceeded')) {
+      return true
+    }
+    // Check for HTTP 503 service unavailable / overloaded
+    if (message.includes('503') || message.includes('service unavailable') || message.includes('overloaded') || message.includes('unavailable')) {
       return true
     }
   }
@@ -57,6 +61,11 @@ function categorizeError(error: unknown): GeminiError {
     // Rate limit (429)
     if (message.includes('429') || message.includes('rate limit') || message.includes('resource exhausted') || message.includes('quota')) {
       return new GeminiError('Gemini API rate limit exceeded.', 'rate_limit')
+    }
+
+    // Service unavailable (503) / overloaded model
+    if (message.includes('503') || message.includes('service unavailable') || message.includes('overloaded') || message.includes('unavailable')) {
+      return new GeminiError('Gemini API service is temporarily unavailable.', 'service_unavailable')
     }
 
     // Timeout
@@ -163,14 +172,33 @@ function delay(ms: number): Promise<void> {
 }
 
 /**
- * Parses a PDF file using Google Gemini 3.6 Flash.
+ * Calculates the retry delay using exponential backoff with jitter.
+ *
+ * - Base delay starts at 2 seconds and doubles each attempt (2s, 4s, 8s, ...)
+ * - Capped at 15 seconds to keep total wait time reasonable
+ * - Random jitter of ±25% prevents multiple clients from retrying simultaneously
+ *
+ * @param attempt - Current attempt number (1-based)
+ * @returns Delay in milliseconds
+ */
+function calculateBackoffDelay(attempt: number): number {
+  const baseDelay = 2000
+  const maxDelay = 15000
+  const exponentialDelay = Math.min(baseDelay * Math.pow(2, attempt - 1), maxDelay)
+  // Apply ±25% jitter: multiply by a random factor between 0.75 and 1.25
+  const jitter = 0.75 + Math.random() * 0.5
+  return Math.round(exponentialDelay * jitter)
+}
+
+/**
+ * Parses a PDF file using Google Gemini 3.8 Flash.
  *
  * Takes a raw PDF file buffer, sends it to Gemini as inline base64 data
  * alongside carefully crafted prompts, and returns the extracted data
  * as a structured object with columns and rows.
  *
- * Implements automatic retry logic: on API timeout or 429 rate limit errors,
- * retries up to 2 times with a 2-second delay between attempts.
+ * Implements automatic retry logic: on API timeout, 429 rate limit, or 503 errors,
+ * retries up to 14 times with exponential backoff (2s → 4s → 8s → 15s cap) and ±25% jitter.
  *
  * @param pdfBuffer - The raw PDF file as a Buffer
  * @returns Parsed data with columns and rows
@@ -179,7 +207,7 @@ function delay(ms: number): Promise<void> {
 
 export async function parseWithGemini(pdfBuffer: Buffer): Promise<ParsedData> {
   let apiKey = ''
-  let model = 'gemini-3.6-flash'
+  let model = 'gemini-3.8-flash'
   let timeout = 30000
 
   // Bezpieczne pobieranie konfiguracji (działa w Nuxt oraz w skryptach testowych)
@@ -187,7 +215,7 @@ export async function parseWithGemini(pdfBuffer: Buffer): Promise<ParsedData> {
     if (typeof useRuntimeConfig === 'function') {
       const config = useRuntimeConfig()
       apiKey = (config.geminiApiKey as string) || ''
-      model = (config.geminiModel as string) || 'gemini-3.6-flash'
+      model = (config.geminiModel as string) || 'gemini-3.8-flash'
       timeout = Number(config.geminiTimeout) || 30000
     }
   } catch {
@@ -218,8 +246,8 @@ export async function parseWithGemini(pdfBuffer: Buffer): Promise<ParsedData> {
   // Convert PDF buffer to base64
   const pdfBase64 = pdfBuffer.toString('base64')
 
-  // Maximum number of attempts (1 initial + 2 retries)
-  const maxAttempts = 3
+  // Maximum number of attempts (1 initial + 14 retries with exponential backoff)
+  const maxAttempts = 15
   let lastError: GeminiError | null = null
 
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
@@ -298,10 +326,11 @@ export async function parseWithGemini(pdfBuffer: Buffer): Promise<ParsedData> {
 
       // Only retry on retryable errors (rate limit or timeout)
       if (isRetryableError(error) && attempt < maxAttempts) {
+        const retryDelay = calculateBackoffDelay(attempt)
         console.warn(
-          `[Gemini] Attempt ${attempt}/${maxAttempts} failed (${lastError.type}): ${lastError.message}. Retrying in 2 seconds...`,
+          `[Gemini] Attempt ${attempt}/${maxAttempts} failed (${lastError.type}): ${lastError.message}. Retrying in ${(retryDelay / 1000).toFixed(1)}s...`,
         )
-        await delay(2000)
+        await delay(retryDelay)
         continue
       }
 

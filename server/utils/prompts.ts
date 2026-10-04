@@ -2,7 +2,7 @@
  * AI Prompt Templates for PDF Price List Parsing
  *
  * These prompts are the most critical part of the application.
- * They instruct the Gemini 2.5 Flash model to extract structured data
+ * They instruct the Gemini 3.8 Flash model to extract structured data
  * from industrial automation PDF price lists.
  */
 

@@ -66,9 +66,13 @@ export default defineEventHandler(async (event) => {
     const csvContent = convertToCSV(parsedData)
 
     // 8. Return the CSV as a file download response
+    //    Use RFC 5987 encoding for filenames with non-ASCII characters (e.g. Polish diacritics)
+    //    to avoid "Invalid character in header content" errors from Node.js
+    const safeFilename = outputFilename.replace(/[^\x20-\x7E]/g, '_')
+    const encodedFilename = encodeURIComponent(outputFilename)
     setResponseHeaders(event, {
       'Content-Type': 'text/csv; charset=utf-8',
-      'Content-Disposition': `attachment; filename="${outputFilename}"`,
+      'Content-Disposition': `attachment; filename="${safeFilename}"; filename*=UTF-8''${encodedFilename}`,
     })
 
     return csvContent
@@ -82,6 +86,9 @@ export default defineEventHandler(async (event) => {
       switch (error.type) {
         case 'rate_limit':
           errorMessage = 'Przekroczono limit zapytań API. Spróbuj ponownie później.'
+          break
+        case 'service_unavailable':
+          errorMessage = 'Usługa AI jest tymczasowo przeciążona. Spróbuj ponownie za chwilę.'
           break
         case 'timeout':
           errorMessage = 'Przetwarzanie trwało zbyt długo. Spróbuj ponownie.'

@@ -45,7 +45,7 @@ Create the following server utility files:
 - Export a function `parseWithGemini(pdfBuffer: Buffer): Promise<{ columns: string[]; rows: string[][] }>` that:
   a. Takes a raw PDF file buffer as input
   b. Converts it to base64
-  c. Sends it to Gemini 3.6 Flash as inline data (mimeType: "application/pdf") along with the system and user prompts (imported from prompts.ts)
+  c. Sends it to Gemini 3.8 Flash as inline data (mimeType: "application/pdf") along with the system and user prompts (imported from prompts.ts)
   d. Implements automatic retry logic: on API timeout or 429 rate limit errors, retry up to 2 times with a 2-second delay between attempts
   e. Extracts the JSON from the AI response using robust extraction (regex to find content between first `{` and last `}`) — do NOT rely on raw JSON.parse() directly on the response text
   f. Validates that the parsed JSON has the expected structure ({ columns: string[], rows: string[][] })

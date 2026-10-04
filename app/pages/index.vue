@@ -49,6 +49,8 @@
 </template>
 
 <script setup lang="ts">
+import { ref } from 'vue'
+
 type AppState = 'idle' | 'processing' | 'complete' | 'error'
 
 const state = ref<AppState>('idle')
@@ -60,13 +62,11 @@ const columnCount = ref(0)
 const errorMessage = ref<string | null>(null)
 
 async function onFileSelected(file: File) {
-  // Transition to processing
   state.value = 'processing'
   selectedFileName.value = file.name
   errorMessage.value = null
 
   try {
-    // Build FormData and send to API
     const formData = new FormData()
     formData.append('file', file)
 
@@ -76,62 +76,53 @@ async function onFileSelected(file: File) {
     })
 
     if (response.ok) {
-      // Success — read the CSV blob
       const blob = await response.blob()
       csvBlob.value = blob
 
-      // Determine the output filename from Content-Disposition header or derive from original name
       const contentDisposition = response.headers.get('Content-Disposition')
       let derivedFileName = ''
       if (contentDisposition) {
         const match = contentDisposition.match(/filename="?([^";\n]+)"?/)
-        if (match) {
+        if (match && match[1]) {
           derivedFileName = match[1]
         }
       }
       if (!derivedFileName) {
-        // Fallback: derive from original filename
         derivedFileName = file.name.replace(/\.pdf$/i, '') + '_parsed.csv'
       }
       outputFileName.value = derivedFileName
 
-      // Parse CSV content to get row and column counts
       const csvText = await blob.text()
       const lines = csvText
-        .replace(/^\uFEFF/, '') // Strip BOM
+        .replace(/^\uFEFF/, '')
         .split(/\r?\n/)
         .filter((line) => line.trim().length > 0)
 
-      if (lines.length > 0) {
-        // First line is the header — count columns by splitting on semicolons
-        // (respecting quoted fields)
+      if (lines.length > 0 && lines[0]) {
         columnCount.value = countCsvColumns(lines[0])
-        // Remaining lines are data rows
         rowCount.value = lines.length - 1
       } else {
         columnCount.value = 0
         rowCount.value = 0
       }
 
-      // Transition to complete
       state.value = 'complete'
     } else {
-      // Error — read JSON error response
       let message = 'Nie udało się przetworzyć pliku PDF.'
       try {
         const errorData = await response.json()
-        if (errorData && errorData.error) {
-          message = errorData.error
+        const serverMessage = errorData?.data?.error ?? errorData?.error
+        if (typeof serverMessage === 'string') {
+          message = serverMessage
         }
       } catch {
-        // Could not parse error JSON, use default message
+        // Fallback
       }
 
       errorMessage.value = message
       state.value = 'error'
     }
   } catch {
-    // Network or unexpected error
     errorMessage.value = 'Wystąpił błąd sieci. Sprawdź połączenie i spróbuj ponownie.'
     state.value = 'error'
   }
@@ -147,10 +138,6 @@ function onReset() {
   errorMessage.value = null
 }
 
-/**
- * Count the number of columns in a CSV header line (semicolon-delimited),
- * respecting quoted fields that may contain semicolons.
- */
 function countCsvColumns(headerLine: string): number {
   let count = 1
   let inQuotes = false
