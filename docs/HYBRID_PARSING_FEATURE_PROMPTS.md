@@ -37,7 +37,7 @@ Do NOT create any new files or modify any source code. Only install the package 
 
 ```
 Read @[docs/HYBRID_PARSING_FEATURE_SPEC.md] section 5 (all subsections 5.1–5.5).
-Also read @[docs/INSTRUCTIONS.md] for code quality rules.
+Also read @[docs/INSTRUCTIONS.md] for code quality rules and all project for context.
 
 Create a NEW file: `server/utils/pdfExtract.ts`
 
