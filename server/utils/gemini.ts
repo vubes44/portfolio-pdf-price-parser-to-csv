@@ -1,5 +1,5 @@
 import { GoogleGenAI } from '@google/genai'
-import { SYSTEM_PROMPT, USER_PROMPT } from './prompts'
+import { SYSTEM_PROMPT, USER_PROMPT, SYSTEM_PROMPT_TEXT_MODE, USER_PROMPT_TEXT_MODE } from './prompts'
 
 /**
  * Parsed data structure returned by Gemini.
@@ -191,21 +191,23 @@ function calculateBackoffDelay(attempt: number): number {
 }
 
 /**
- * Parses a PDF file using Google Gemini 3.8 Flash.
+ * Shared internal helper that handles the Gemini API call with retry logic.
  *
- * Takes a raw PDF file buffer, sends it to Gemini as inline base64 data
- * alongside carefully crafted prompts, and returns the extracted data
- * as a structured object with columns and rows.
+ * Encapsulates config loading, API key validation, client initialization,
+ * the retry loop with exponential backoff, JSON extraction, and validation.
+ * This eliminates code duplication between blob-mode and text-mode paths.
  *
- * Implements automatic retry logic: on API timeout, 429 rate limit, or 503 errors,
- * retries up to 14 times with exponential backoff (2s → 4s → 8s → 15s cap) and ±25% jitter.
- *
- * @param pdfBuffer - The raw PDF file as a Buffer
- * @returns Parsed data with columns and rows
+ * @param buildContents - Callback that returns the `contents` array for the API request
+ * @param systemInstruction - The system prompt to use for this request
+ * @param mode - Label for logging: 'text' or 'blob'
+ * @returns Parsed and validated data with columns and rows
  * @throws GeminiError with categorized type for each failure scenario
  */
-
-export async function parseWithGemini(pdfBuffer: Buffer): Promise<ParsedData> {
+async function callGeminiWithRetry(
+  buildContents: () => { role: string; parts: Array<{ text?: string; inlineData?: { mimeType: string; data: string } }> }[],
+  systemInstruction: string,
+  mode: 'text' | 'blob',
+): Promise<ParsedData> {
   let apiKey = ''
   let model = 'gemini-3.8-flash'
   let timeout = 30000
@@ -243,9 +245,6 @@ export async function parseWithGemini(pdfBuffer: Buffer): Promise<ParsedData> {
   // Initialize the Google Generative AI client
   const ai = new GoogleGenAI({ apiKey })
 
-  // Convert PDF buffer to base64
-  const pdfBase64 = pdfBuffer.toString('base64')
-
   // Maximum number of attempts (1 initial + 14 retries with exponential backoff)
   const maxAttempts = 15
   let lastError: GeminiError | null = null
@@ -259,24 +258,9 @@ export async function parseWithGemini(pdfBuffer: Buffer): Promise<ParsedData> {
       try {
         const response = await ai.models.generateContent({
           model,
-          contents: [
-            {
-              role: 'user',
-              parts: [
-                {
-                  inlineData: {
-                    mimeType: 'application/pdf',
-                    data: pdfBase64,
-                  },
-                },
-                {
-                  text: USER_PROMPT,
-                },
-              ],
-            },
-          ],
+          contents: buildContents(),
           config: {
-            systemInstruction: SYSTEM_PROMPT,
+            systemInstruction,
             temperature: 0,
             abortSignal: controller.signal,
           },
@@ -312,7 +296,7 @@ export async function parseWithGemini(pdfBuffer: Buffer): Promise<ParsedData> {
         const validatedData = validateParsedData(parsedJSON)
 
         console.log(
-          `[Gemini] Successfully parsed PDF: ${validatedData.columns.length} columns, ${validatedData.rows.length} rows (attempt ${attempt}/${maxAttempts})`,
+          `[Gemini] Successfully parsed PDF (${mode} mode): ${validatedData.columns.length} columns, ${validatedData.rows.length} rows (attempt ${attempt}/${maxAttempts})`,
         )
 
         return validatedData
@@ -343,5 +327,69 @@ export async function parseWithGemini(pdfBuffer: Buffer): Promise<ParsedData> {
   throw lastError ?? new GeminiError('All retry attempts exhausted.', 'generic')
 }
 
+/**
+ * Parses a PDF file using Google Gemini by sending the raw PDF as a base64-encoded blob.
+ *
+ * This is the original parsing path (blob-mode). The PDF is sent as inline binary data
+ * alongside the blob-mode prompts. Gemini uses its vision capabilities to analyze the PDF.
+ *
+ * @param pdfBuffer - The raw PDF file as a Buffer
+ * @returns Parsed data with columns and rows
+ * @throws GeminiError with categorized type for each failure scenario
+ */
+export async function parseWithGeminiBlob(pdfBuffer: Buffer): Promise<ParsedData> {
+  const pdfBase64 = pdfBuffer.toString('base64')
+
+  return callGeminiWithRetry(
+    () => [
+      {
+        role: 'user',
+        parts: [
+          { inlineData: { mimeType: 'application/pdf', data: pdfBase64 } },
+          { text: USER_PROMPT },
+        ],
+      },
+    ],
+    SYSTEM_PROMPT,
+    'blob',
+  )
+}
+
+/**
+ * Parses pre-extracted PDF text using Google Gemini in text-mode.
+ *
+ * This is the new lightweight parsing path. Instead of sending the raw PDF blob,
+ * it sends the pre-extracted text content alongside text-mode prompts.
+ * This uses fewer tokens and reduces the risk of 503 errors.
+ *
+ * @param extractedText - The pre-extracted text content from the PDF
+ * @returns Parsed data with columns and rows
+ * @throws GeminiError with categorized type for each failure scenario
+ */
+export async function parseWithGeminiText(extractedText: string): Promise<ParsedData> {
+  return callGeminiWithRetry(
+    () => [
+      {
+        role: 'user',
+        parts: [
+          { text: extractedText },
+          { text: USER_PROMPT_TEXT_MODE },
+        ],
+      },
+    ],
+    SYSTEM_PROMPT_TEXT_MODE,
+    'text',
+  )
+}
+
+/**
+ * Backward-compatible alias for parseWithGeminiBlob.
+ *
+ * Ensures any existing code or tests referencing `parseWithGemini(buffer)`
+ * continue to work without modification.
+ */
+export const parseWithGemini = parseWithGeminiBlob
+
 // Re-export the error class for use in the API endpoint
 export { GeminiError }
+

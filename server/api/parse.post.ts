@@ -1,5 +1,6 @@
 import { readMultipartFormData, createError, setResponseHeaders } from 'h3'
-import { parseWithGemini, GeminiError } from '../utils/gemini'
+import { parseWithGeminiBlob, parseWithGeminiText, GeminiError } from '../utils/gemini'
+import { extractTextFromPDF, isTextUsable } from '../utils/pdfExtract'
 import { convertToCSV } from '../utils/csv'
 
 /**
@@ -59,8 +60,29 @@ export default defineEventHandler(async (event) => {
   const outputFilename = `${baseName}_parsed.csv`
 
   try {
-    // 6. Call parseWithGemini() to extract structured data from the PDF
-    const parsedData = await parseWithGemini(pdfBuffer)
+    // 6. Hybrid parsing: attempt text-mode first, fall back to blob-mode
+
+    // Step 1: Attempt to extract text from the PDF
+    const extractedText = await extractTextFromPDF(pdfBuffer)
+
+    let parsedData
+
+    // Step 2: Decide which parsing mode to use
+    if (isTextUsable(extractedText, pdfBuffer.length)) {
+      // Text-mode: lightweight, fast, low 503 risk
+      console.log(`[/api/parse] Text extraction successful (${extractedText.length} chars). Using text-mode parsing.`)
+      try {
+        parsedData = await parseWithGeminiText(extractedText)
+      } catch (textError: unknown) {
+        // Text-mode failed — fall back to blob-mode
+        console.warn(`[/api/parse] Text-mode parsing failed. Falling back to blob-mode.`, textError)
+        parsedData = await parseWithGeminiBlob(pdfBuffer)
+      }
+    } else {
+      // Blob-mode: scanned/image PDF or insufficient text
+      console.log(`[/api/parse] Text extraction insufficient. Using blob-mode parsing.`)
+      parsedData = await parseWithGeminiBlob(pdfBuffer)
+    }
 
     // 7. Convert the result to CSV using convertToCSV()
     const csvContent = convertToCSV(parsedData)
