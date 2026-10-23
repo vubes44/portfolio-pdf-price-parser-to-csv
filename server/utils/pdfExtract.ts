@@ -10,20 +10,7 @@
  * library for PDF text extraction.
  */
 
-declare module 'pdf-parse' {
-  interface PDFData {
-    numpages: number
-    numrender: number
-    info: Record<string, unknown>
-    metadata: unknown
-    text: string
-    version: string
-  }
-  function pdfParse(dataBuffer: Buffer): Promise<PDFData>
-  export = pdfParse
-}
-
-import pdfParse from 'pdf-parse'
+import { PDFParse } from 'pdf-parse'
 
 /**
  * Extracts raw text content from a PDF buffer using the pdf-parse library.
@@ -36,13 +23,19 @@ import pdfParse from 'pdf-parse'
  * @returns The extracted text string, or an empty string if extraction fails
  */
 export async function extractTextFromPDF(pdfBuffer: Buffer): Promise<string> {
+  let parser: PDFParse | null = null
   try {
-    const data = await pdfParse(pdfBuffer)
+    parser = new PDFParse({ data: pdfBuffer })
+    const data = await parser.getText()
     return data.text
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : String(error)
     console.warn(`[pdfExtract] Failed to extract text from PDF: ${message}`)
     return ''
+  } finally {
+    if (parser) {
+      await parser.destroy().catch(() => { })
+    }
   }
 }
 

@@ -1,5 +1,5 @@
 import { GoogleGenAI } from '@google/genai'
-import { SYSTEM_PROMPT, USER_PROMPT, SYSTEM_PROMPT_TEXT_MODE, USER_PROMPT_TEXT_MODE } from './prompts'
+
 
 /**
  * Parsed data structure returned by Gemini.

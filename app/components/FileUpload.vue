@@ -89,6 +89,8 @@ function onDrop(event: DragEvent) {
   if (!files || files.length === 0) return
 
   const file = files[0]
+  if (!file) return
+
   validateAndEmit(file)
 }
 
@@ -99,6 +101,8 @@ function onFileInputChange(event: Event) {
   if (!files || files.length === 0) return
 
   const file = files[0]
+  if (!file) return
+
   validateAndEmit(file)
 
   // Reset the input so the same file can be re-selected
